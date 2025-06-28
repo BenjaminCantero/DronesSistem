@@ -3,9 +3,11 @@ from sim.init_simulation import SimulationInitializer
 from sim.simulation import Simulation
 from visual.networkx_adapter import NetworkXAdapter
 from visual.avl_visualizer import AVLVisualizer
+from visual.map_visualizer import show_graph_map
 from domain.client import Client
 import matplotlib.pyplot as plt
 import pandas as pd
+from reports.report_generator import ReportGenerator
 
 # Configuración de la página de Streamlit
 st.set_page_config(page_title="Sistema Logístico Autónomo con Drones", layout="wide")
@@ -73,21 +75,29 @@ def run():
     with tab2:
         st.header("🌍 Explorar Red")
         if st.session_state.sim:
-            fig = st.session_state.graph_adapter.draw_graph()
-            fig.set_size_inches(4, 3)
-            st.pyplot(fig)
+            # Visualización sobre mapa real
+            st.subheader("Visualización georreferenciada (Mapa real)")
+            show_graph_map(
+                st.session_state.sim.graph,
+                path=st.session_state.get("calculated_path"),
+                mst_edges=st.session_state.get("mst_edges")
+            )
 
             # Leyenda de colores para los tipos de nodos
             st.markdown("""
             **Leyenda de colores:**
             <span style='color:#1f77b4'>●</span> Almacenamiento &nbsp;&nbsp;
             <span style='color:#2ca02c'>●</span> Recarga &nbsp;&nbsp;
-            <span style='color:#ff7f0e'>●</span> Cliente
+            <span style='color:#ff7f0e'>●</span> Cliente &nbsp;&nbsp;
+            <span style='color:purple'>━━</span> MST
             """, unsafe_allow_html=True)
 
             st.markdown("### Buscar Ruta entre Nodos")
             origin = st.text_input("Nodo de origen", key="origin_input")
             destination = st.text_input("Nodo de destino", key="destination_input")
+
+            # Selección de algoritmo
+            algorithm = st.radio("Algoritmo de ruta", ["Autonomía (actual)", "Dijkstra", "Floyd-Warshall"], index=0)
 
             # Botón para calcular ruta entre nodos
             if st.button("✈ Calcular Ruta"):
@@ -98,7 +108,14 @@ def run():
                     st.session_state.calculated_origin = None
                     st.session_state.calculated_destination = None
                 else:
-                    path, cost = st.session_state.sim.calculate_route(origin, destination)
+                    if algorithm == "Dijkstra":
+                        path, cost = st.session_state.sim.graph.dijkstra(origin, destination)
+                    elif algorithm == "Floyd-Warshall":
+                        dist, next_node = st.session_state.sim.graph.floyd_warshall()
+                        path = st.session_state.sim.graph.reconstruct_fw_path(origin, destination, next_node)
+                        cost = dist[origin][destination] if path else None
+                    else:
+                        path, cost = st.session_state.sim.calculate_route(origin, destination)
                     if path:
                         st.session_state.calculated_path = path
                         st.session_state.calculated_cost = cost
@@ -109,6 +126,12 @@ def run():
                         st.session_state.calculated_cost = None
                         st.session_state.calculated_origin = None
                         st.session_state.calculated_destination = None
+
+            # Botón para mostrar el MST
+            if st.button("🌲 Mostrar MST (Kruskal)"):
+                st.session_state["mst_edges"] = st.session_state.sim.graph.kruskal_mst()
+            if st.button("❌ Ocultar MST"):
+                st.session_state["mst_edges"] = None
 
             # Mostrar ruta encontrada y permitir registrar orden solo si hay cliente en el destino
             if st.session_state.get("calculated_path"):
@@ -191,6 +214,19 @@ def run():
                 visualizer = AVLVisualizer(st.session_state.sim.route_log)
                 fig = visualizer.draw()
                 st.pyplot(fig)
+
+            # Botón para generar informe PDF
+            if st.button("📄 Generar Informe PDF"):
+                report = ReportGenerator(st.session_state.sim)
+                filename = "informe_drones.pdf"
+                report.generate_pdf(filename)
+                with open(filename, "rb") as f:
+                    st.download_button(
+                        label="Descargar Informe PDF",
+                        data=f,
+                        file_name=filename,
+                        mime="application/pdf"
+                    )
 
     # ----------- Pestaña 5: Estadísticas Generales -----------
     with tab5:

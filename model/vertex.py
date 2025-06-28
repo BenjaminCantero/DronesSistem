@@ -1,10 +1,13 @@
 class Vertex:
-    def __init__(self, id, role="client"):
+    def __init__(self, id, role="client", lat=None, lon=None):
         # Inicializa un nodo (vértice) del grafo.
         # id: identificador único del nodo.
         # role: tipo de nodo ('client', 'storage' o 'recharge'). Por defecto es 'client'.
+        # lat, lon: coordenadas geográficas opcionales.
         self.id = id
         self.role = role
+        self.lat = lat
+        self.lon = lon
         self.neighbors = {}  # Diccionario de vecinos: clave = id del vecino, valor = peso de la arista.
 
     def add_neighbor(self, neighbor_id, weight):

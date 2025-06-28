@@ -17,9 +17,17 @@ class SimulationInitializer:
         return self.graph
 
     def _create_vertices(self):
-        # Crea los vértices numerados del 0 al n_nodes-1
+        # Crea los vértices numerados del 0 al n_nodes-1 con coordenadas geográficas aleatorias en Temuco
+        TEMUCO_BOUNDS = {
+            'lat_min': -38.77,
+            'lat_max': -38.70,
+            'lon_min': -72.65,
+            'lon_max': -72.55
+        }
         for i in range(self.n_nodes):
-            self.graph.add_vertex(str(i))
+            lat = random.uniform(TEMUCO_BOUNDS['lat_min'], TEMUCO_BOUNDS['lat_max'])
+            lon = random.uniform(TEMUCO_BOUNDS['lon_min'], TEMUCO_BOUNDS['lon_max'])
+            self.graph.add_vertex(str(i), lat=lat, lon=lon)
 
     def _assign_roles(self):
         # Asigna roles a los nodos: 20% almacenamiento, 20% recarga, el resto clientes
