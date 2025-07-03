@@ -8,7 +8,7 @@ from domain.client import Client
 import matplotlib.pyplot as plt
 import pandas as pd
 from reports.report_generator import ReportGenerator
-from database import Session, Cliente, Orden
+from database import Session, Cliente, Orden, obtener_ordenes_db
 
 # Configuración de la página de Streamlit
 st.set_page_config(page_title="Sistema Logístico Autónomo con Drones", layout="wide")
