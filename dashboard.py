@@ -8,6 +8,7 @@ from domain.client import Client
 import matplotlib.pyplot as plt
 import pandas as pd
 from reports.report_generator import ReportGenerator
+from database import Session, Cliente, Orden
 
 # Configuración de la página de Streamlit
 st.set_page_config(page_title="Sistema Logístico Autónomo con Drones", layout="wide")
@@ -182,15 +183,21 @@ def run():
                     else:
                         client = Client(client_id, client_name, node_id, priority)
                         st.session_state.sim.add_client(client)
-                        st.success(f"Cliente {client.name} agregado en nodo {node_id} con prioridad {priority}")
+                        # Guardar cliente en la base de datos
+                        if agregar_cliente_db(client_id, client_name, node_id, priority):
+                            st.success(f"Cliente {client.name} agregado en nodo {node_id} con prioridad {priority}")
+                        else:
+                            st.error("Error al agregar el cliente en la base de datos.")
 
             # Mostrar clientes y órdenes registrados
             st.subheader("Clientes registrados")
-            st.json([client[1].to_dict() for client in st.session_state.sim.get_clients()])
+            clientes_registrados = st.session_state.sim.get_clients()
+            st.json([client[1].to_dict() for client in clientes_registrados])
 
-            orders = list(st.session_state.sim.get_orders())
+            # Cargar y mostrar órdenes desde la base de datos
             st.subheader("Órdenes registradas")
-            st.json([order[1].to_dict() for order in orders])
+            ordenes_registradas = obtener_ordenes_db()
+            st.json([orden.to_dict() for orden in ordenes_registradas])
 
     # ----------- Pestaña 4: Analítica de Rutas -----------
     with tab4:
@@ -282,6 +289,30 @@ def run():
                 st.pyplot(fig2)
             else:
                 st.info("Aún no hay visitas registradas en los nodos.")
+
+def agregar_cliente_db(client_id, client_name, node_id, priority):
+    session = Session()
+    if session.query(Cliente).filter_by(id=client_id).first():
+        session.close()
+        return False
+    nuevo_cliente = Cliente(id=client_id, nombre=client_name, nodo_id=node_id, prioridad=priority)
+    session.add(nuevo_cliente)
+    session.commit()
+    session.close()
+    return True
+
+def obtener_clientes_db():
+    session = Session()
+    clientes = session.query(Cliente).all()
+    session.close()
+    return clientes
+
+def agregar_orden_db(origen, destino, cliente_id):
+    session = Session()
+    nueva_orden = Orden(origen=origen, destino=destino, cliente_id=cliente_id)
+    session.add(nueva_orden)
+    session.commit()
+    session.close()
 
 if __name__ == "__main__":
     run()
