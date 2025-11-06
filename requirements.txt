@@ -6,3 +6,5 @@ streamlit-folium
 fpdf2
 fastapi
 uvicorn
+networkx
+sqlalchemy

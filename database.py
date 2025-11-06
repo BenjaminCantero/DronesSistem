@@ -18,9 +18,14 @@ class Orden(Base):
     cliente_id = Column(String, ForeignKey('clientes.id'))
     cliente = relationship("Cliente")
 
-engine = create_engine('sqlite:///drones.db')
-Base.metadata.create_all(engine)
+engine = create_engine('sqlite:///drones.db', echo=True)
 Session = sessionmaker(bind=engine)
+
+def init_db():
+    Base.metadata.create_all(engine)
+    
+# Crear las tablas al importar el módulo
+init_db()
 
 def agregar_cliente_db(client_id, client_name, node_id, priority):
     session = Session()

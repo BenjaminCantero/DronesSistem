@@ -7,15 +7,31 @@ import os
 
 app = FastAPI(title="API Sistema Drones")
 
+from database import Session, Cliente, Orden, init_db
+
+# Asegurar que la base de datos está inicializada
+init_db()
+
 # Instancia global de simulación (para demo, en producción usar base de datos o inyección de dependencias)
 sim = None
 
 def get_sim():
     global sim
     if sim is None:
-        initializer = SimulationInitializer(15, 20)
-        graph = initializer.generate_connected_graph()
-        sim = Simulation(graph)
+        try:
+            initializer = SimulationInitializer(15, 20)
+            graph = initializer.generate_connected_graph()
+            sim = Simulation(graph)
+            
+            # Cargar datos existentes de la base de datos
+            session = Session()
+            for cliente in session.query(Cliente).all():
+                sim.add_client(cliente.id, cliente.nombre, cliente.nodo_id, cliente.prioridad)
+            session.close()
+            
+        except Exception as e:
+            print(f"Error al inicializar la simulación: {e}")
+            raise HTTPException(status_code=500, detail="Error al inicializar la simulación")
     return sim
 
 @app.get("/clients/")

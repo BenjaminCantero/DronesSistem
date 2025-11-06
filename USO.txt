@@ -1,11 +1,19 @@
 # Instrucciones de uso del Sistema Logístico Autónomo con Drones
 
-## Instalación de dependencias
+## Configuración del entorno virtual e instalación de dependencias
 
 1. Abre una terminal en la carpeta raíz del proyecto.
-2. Ejecuta:
+2. Crea y activa el entorno virtual:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+   Verás que el prompt cambia mostrando `(.venv)` al inicio.
 
+3. Instala las dependencias:
+   ```bash
    pip install -r requirements.txt
+   ```
 
 Esto instalará todas las librerías necesarias para Streamlit, FastAPI, visualización y generación de PDF.
 
@@ -13,17 +21,22 @@ Esto instalará todas las librerías necesarias para Streamlit, FastAPI, visuali
 
 ## Cómo iniciar el sistema
 
-1. Ejecuta el script de inicio automático:
+1. Asegúrate de que el entorno virtual está activado (debe aparecer `(.venv)` en el prompt).
+   Si no está activado, ejecuta:
+   ```bash
+   source .venv/bin/activate
+   ```
 
-   ./start_all.ps1
-
-   (En PowerShell, estando en la carpeta raíz del proyecto)
-
+2. Ejecuta el script de inicio automático:
+   ```bash
+   ./start_all.sh
+   ```
    Si ves un error de permisos, ejecuta antes:
+   ```bash
+   chmod +x start_all.sh
+   ```
 
-   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-
-2. Esto levantará dos servidores:
+3. El script iniciará dos servidores:
    - **Streamlit** (interfaz visual): http://localhost:8501
    - **API FastAPI** (backend REST): http://localhost:8000
 
@@ -61,3 +74,6 @@ Esto instalará todas las librerías necesarias para Streamlit, FastAPI, visuali
 ## Notas
 - Puedes modificar los parámetros de simulación desde la interfaz antes de iniciar.
 - El sistema es escalable y permite exportar informes y consumir datos desde otros sistemas.
+- Para detener los servicios, presiona Ctrl+C en la terminal donde ejecutaste el script.
+- Si necesitas reiniciar los servicios, simplemente vuelve a ejecutar `./start_all.sh`.
+- Si cierras la terminal, asegúrate de reactivar el entorno virtual con `source .venv/bin/activate` antes de ejecutar cualquier comando.
