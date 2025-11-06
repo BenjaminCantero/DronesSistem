@@ -14,12 +14,22 @@ from database import Session, Cliente, Orden, obtener_ordenes_db
 st.set_page_config(page_title="Sistema Logístico Autónomo con Drones", layout="wide")
 
 # Inicialización de variables en la sesión de Streamlit
-if 'sim' not in st.session_state:
-    st.session_state.sim = None
-if 'graph_adapter' not in st.session_state:
-    st.session_state.graph_adapter = None
-if 'order_success' not in st.session_state:
-    st.session_state.order_success = False
+def init_session_state():
+    if 'sim' not in st.session_state:
+        st.session_state.sim = None
+    if 'graph_adapter' not in st.session_state:
+        st.session_state.graph_adapter = None
+    if 'order_success' not in st.session_state:
+        st.session_state.order_success = False
+    if 'calculated_path' not in st.session_state:
+        st.session_state.calculated_path = []
+    if 'calculated_cost' not in st.session_state:
+        st.session_state.calculated_cost = 0
+    if 'mst_edges' not in st.session_state:
+        st.session_state.mst_edges = []
+
+# Inicializar el estado
+init_session_state()
 
 # Función auxiliar para obtener los nodos más visitados por tipo
 def get_top_nodos_por_tipo(total_freq, roles_dict, n=5):
@@ -94,69 +104,260 @@ def run():
             """, unsafe_allow_html=True)
 
             st.markdown("### Buscar Ruta entre Nodos")
-            origin = st.text_input("Nodo de origen", key="origin_input")
-            destination = st.text_input("Nodo de destino", key="destination_input")
+            
+            # Lista de nodos disponibles
+            nodos_disponibles = list(st.session_state.sim.graph.vertices.keys())
+            
+            # Selectbox para origen y destino
+            origin = st.selectbox("Nodo de origen", 
+                                options=nodos_disponibles,
+                                key="origin_input")
+            
+            # Filtrar el nodo de origen de las opciones de destino
+            nodos_destino = [n for n in nodos_disponibles if n != origin]
+            destination = st.selectbox("Nodo de destino", 
+                                     options=nodos_destino,
+                                     key="destination_input")
+            
+            # Selector de algoritmo y autonomía
+            col1, col2 = st.columns(2)
+            with col1:
+                algorithm = st.selectbox("Algoritmo de ruta", 
+                                       options=["Dijkstra", "Floyd-Warshall"])
+            with col2:
+                battery = st.slider("Autonomía (distancia)", 
+                                  min_value=10, 
+                                  max_value=100, 
+                                  value=50)
 
-            # Selección de algoritmo
+            # Calcular y mostrar la ruta
+            if origin and destination:
+                try:
+                    path, cost = st.session_state.sim.calculate_route(origin, destination, battery)
+                    if path and cost:
+                        # Actualizar el estado
+                        st.session_state.calculated_path = path
+                        st.session_state.calculated_cost = cost
+                        
+                        # Mostrar información de la ruta
+                        st.success(f"**Ruta encontrada:** {' → '.join(path)} | **Costo total:** {cost}")
+                        
+                        # Información detallada de la ruta
+                        st.markdown("#### 🔍 Detalles de la ruta:")
+                        total_distance = 0
+                        recharge_points = 0
+                        
+                        for i in range(len(path)-1):
+                            from_node = path[i]
+                            to_node = path[i+1]
+                            edge_cost = st.session_state.sim.graph.vertices[from_node].neighbors[to_node]
+                            node_type = st.session_state.sim.graph.vertices[to_node].role
+                            total_distance += edge_cost
+                            
+                            # Emoji según el tipo de nodo
+                            type_emoji = "🏪" if node_type == "storage" else "🔋" if node_type == "recharge" else "👤"
+                            if node_type == "recharge":
+                                recharge_points += 1
+                            
+                            st.write(f"{from_node} → {to_node} ({edge_cost} unidades) | {type_emoji} {node_type.capitalize()}")
+                        
+                        # Resumen de la ruta
+                        st.markdown("#### 📊 Resumen")
+                        st.write(f"- **Distancia total:** {total_distance} unidades")
+                        st.write(f"- **Puntos de recarga:** {recharge_points}")
+                        st.write(f"- **Nodos visitados:** {len(path)}")
+                        
+                        # Actualizar visualización en el mapa
+                        show_graph_map(st.session_state.sim.graph, path=path)
+                    else:
+                        st.error("❌ No se encontró una ruta válida con la autonomía especificada")
+                        st.session_state.calculated_path = []
+                        st.session_state.calculated_cost = 0
+                except Exception as e:
+                    st.error(f"❌ Error al calcular la ruta: {str(e)}")
+                    st.session_state.calculated_path = []
+                    st.session_state.calculated_cost = 0
             algorithm = st.radio("Algoritmo de ruta", ["Autonomía (actual)", "Dijkstra", "Floyd-Warshall"], index=0)
 
-            # Botón para calcular ruta entre nodos
-            if st.button("✈ Calcular Ruta"):
+            # Botón para calcular ruta entre nodos con llave única
+            if st.button("✈ Calcular Ruta", key=f"calc_route_{origin}_{destination}_{algorithm}"):
                 if not origin or not destination:
-                    st.error("Por favor, ingresa tanto el nodo de origen como el de destino.")
+                    st.error("Por favor, ingresa tanto el nodo de origen como el de destino.", key=f"error_route_{origin}_{destination}")
                     st.session_state.calculated_path = None
                     st.session_state.calculated_cost = None
                     st.session_state.calculated_origin = None
                     st.session_state.calculated_destination = None
                 else:
-                    if algorithm == "Dijkstra":
-                        path, cost = st.session_state.sim.graph.dijkstra(origin, destination)
-                    elif algorithm == "Floyd-Warshall":
-                        dist, next_node = st.session_state.sim.graph.floyd_warshall()
-                        path = st.session_state.sim.graph.reconstruct_fw_path(origin, destination, next_node)
-                        cost = dist[origin][destination] if path else None
-                    else:
-                        path, cost = st.session_state.sim.calculate_route(origin, destination)
-                    if path:
-                        st.session_state.calculated_path = path
-                        st.session_state.calculated_cost = cost
-                        st.session_state.calculated_origin = origin
-                        st.session_state.calculated_destination = destination
-                    else:
-                        st.session_state.calculated_path = None
-                        st.session_state.calculated_cost = None
-                        st.session_state.calculated_origin = None
-                        st.session_state.calculated_destination = None
+                    try:
+                        if algorithm == "Dijkstra":
+                            path, cost = st.session_state.sim.graph.dijkstra(origin, destination)
+                        elif algorithm == "Floyd-Warshall":
+                            dist, next_node = st.session_state.sim.graph.floyd_warshall()
+                            path = st.session_state.sim.graph.reconstruct_fw_path(origin, destination, next_node)
+                            cost = dist[origin][destination] if path else None
+                        else:
+                            path, cost = st.session_state.sim.calculate_route(origin, destination)
+                        
+                        if path:
+                            st.session_state.calculated_path = path
+                            st.session_state.calculated_cost = cost
+                            st.session_state.calculated_origin = origin
+                            st.session_state.calculated_destination = destination
+                        else:
+                            st.session_state.calculated_path = None
+                            st.session_state.calculated_cost = None
+                            st.session_state.calculated_origin = None
+                            st.session_state.calculated_destination = None
+                            st.error("No se encontró una ruta válida.", key=f"no_route_{origin}_{destination}")
+                    except Exception as e:
+                        st.error(f"Error al calcular la ruta: {str(e)}", key=f"error_calc_{origin}_{destination}")
 
             # Botón para mostrar el MST
-            if st.button("🌲 Mostrar MST (Kruskal)"):
-                st.session_state["mst_edges"] = st.session_state.sim.graph.kruskal_mst()
-            if st.button("❌ Ocultar MST"):
-                st.session_state["mst_edges"] = None
+            # Botones MST con llaves únicas
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🌲 Mostrar MST (Kruskal)", key="show_mst"):
+                    st.session_state["mst_edges"] = st.session_state.sim.graph.kruskal_mst()
+            with col2:
+                if st.button("❌ Ocultar MST", key="hide_mst"):
+                    st.session_state["mst_edges"] = None
 
             # Mostrar ruta encontrada y permitir registrar orden solo si hay cliente en el destino
             if st.session_state.get("calculated_path"):
                 st.success(f"**Ruta encontrada:** {' → '.join(st.session_state.calculated_path)} | **Costo:** {st.session_state.calculated_cost}")
-                if st.button("✅ Completar Entrega y Registrar Orden"):
+                # Botón para completar entrega con llave única
+                if st.button("✅ Completar Entrega y Registrar Orden", 
+                           key=f"complete_order_{st.session_state.calculated_origin}_{st.session_state.calculated_destination}"):
                     destino = st.session_state.calculated_destination
                     clientes_en_destino = [
                         client for _, client in st.session_state.sim.get_clients()
                         if client.node_id == destino
                     ]
                     if not clientes_en_destino:
-                        st.error("No se puede crear la orden: no hay ningún cliente registrado en el nodo de destino.")
+                        st.error("No se puede crear la orden: no hay ningún cliente registrado en el nodo de destino.",
+                                key=f"error_no_client_{destino}")
                     else:
-                        st.session_state.sim.create_order(
-                            st.session_state.calculated_origin,
-                            st.session_state.calculated_destination
-                        )
-                        st.session_state.order_success = True
+                        try:
+                            st.session_state.sim.create_order(
+                                st.session_state.calculated_origin,
+                                st.session_state.calculated_destination
+                            )
+                            st.session_state.order_success = True
+                            st.success("Orden registrada exitosamente", 
+                                     key=f"success_order_{st.session_state.calculated_origin}_{st.session_state.calculated_destination}")
+                        except Exception as e:
+                            st.error(f"Error al crear la orden: {str(e)}", 
+                                   key=f"error_create_order_{st.session_state.calculated_origin}_{st.session_state.calculated_destination}")
             elif "calculated_path" in st.session_state and st.session_state.calculated_path is None:
                 st.error("No hay ruta disponible con la autonomía actual.")
 
     # ----------- Pestaña 3: Clientes y Órdenes -----------
     with tab3:
         st.header("👥 Clientes y Órdenes")
+        
+        if not st.session_state.sim:
+            st.warning("⚠️ Primero debes iniciar una simulación en la pestaña 'Ejecutar Simulación'")
+        else:
+            # Sección para agregar clientes
+            st.subheader("Agregar Cliente")
+            with st.form("nuevo_cliente"):
+                client_id = st.text_input("ID del cliente", key="client_id_input")
+                client_name = st.text_input("Nombre del cliente", key="client_name_input")
+                
+                # Obtener lista de nodos disponibles
+                nodos_disponibles = [
+                    nodo_id for nodo_id, vertex in st.session_state.sim.graph.vertices.items()
+                    if vertex.role == "client"
+                ]
+                
+                node_id = st.selectbox("Nodo donde se ubicará el cliente", 
+                                     options=nodos_disponibles,
+                                     key="node_id_input")
+                                     
+                priority = st.number_input("Prioridad", min_value=1, max_value=10, value=1,
+                                         key="priority_input")
+                
+                submit_button = st.form_submit_button("Agregar Cliente")
+                
+                if submit_button:
+                    try:
+                        st.session_state.sim.add_client(client_id, client_name, node_id, priority)
+                        st.success(f"✅ Cliente {client_name} agregado correctamente!")
+                    except Exception as e:
+                        st.error(f"❌ Error al agregar cliente: {str(e)}")
+            
+            # Mostrar clientes registrados
+            st.subheader("Clientes registrados")
+            clientes = []
+            for client_id, client in st.session_state.sim.clients.items():
+                clientes.append(client.to_dict())
+            
+            if clientes:
+                df_clientes = pd.DataFrame(clientes)
+                st.dataframe(df_clientes, width='stretch')
+                
+                # Sección para crear órdenes
+                st.subheader("Crear Nueva Orden")
+                with st.form("nueva_orden"):
+                    # Seleccionar cliente
+                    client_ids = [c["id"] for c in clientes]
+                    selected_client = st.selectbox("Cliente", options=client_ids)
+                    
+                    # Obtener el nodo del cliente seleccionado
+                    cliente_origen = next(c["node_id"] for c in clientes if c["id"] == selected_client)
+                    
+                    # Seleccionar destino
+                    nodos_destino = [
+                        nodo_id for nodo_id, vertex in st.session_state.sim.graph.vertices.items()
+                        if nodo_id != cliente_origen
+                    ]
+                    destino = st.selectbox("Nodo destino", options=nodos_destino)
+                    
+                    submit_orden = st.form_submit_button("Crear Orden")
+                    
+                    if submit_orden:
+                        try:
+                            orden = st.session_state.sim.create_order(cliente_origen, destino)
+                            if orden:
+                                st.success(f"✅ Orden creada exitosamente: {orden.to_dict()}")
+                            else:
+                                st.error("❌ No se pudo crear la orden")
+                        except Exception as e:
+                            st.error(f"❌ Error al crear la orden: {str(e)}")
+                            
+                # Mostrar órdenes registradas
+                st.subheader("Órdenes registradas")
+                try:
+                    ordenes = obtener_ordenes_db()
+                    if ordenes:
+                        df_ordenes = pd.DataFrame(ordenes)
+                        # Añadir columnas formateadas
+                        df_ordenes['Estado'] = 'Activa'
+                        df_ordenes['Acciones'] = '🔍 Ver detalles'
+                        
+                        # Mostrar tabla con formato mejorado
+                        st.dataframe(
+                            df_ordenes,
+                            width='stretch',
+                            column_config={
+                                "id": "ID",
+                                "origen": "Origen",
+                                "destino": "Destino",
+                                "cliente_id": "Cliente",
+                                "Estado": st.column_config.TextColumn(
+                                    "Estado",
+                                    help="Estado actual de la orden"
+                                ),
+                                "Acciones": st.column_config.TextColumn(
+                                    "Acciones",
+                                    help="Acciones disponibles"
+                                )
+                            }
+                        )
+                    else:
+                        st.info("📝 No hay órdenes registradas")
+                except Exception as e:
+                    st.error(f"❌ Error al cargar las órdenes: {str(e)}")
         if st.session_state.sim:
             if st.session_state.order_success:
                 st.success("Orden generada y ruta registrada exitosamente.")

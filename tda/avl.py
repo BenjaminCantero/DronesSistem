@@ -46,7 +46,31 @@ class AVLTree:
 
     def _balance(self, node):
         # Realiza rotaciones para mantener el balance del árbol.
+        if not node:
+            return node
+
+        # Obtener el factor de balance
         balance = self._get_balance(node)
+
+        # Caso Izquierda-Izquierda
+        if balance > 1 and self._get_balance(node.left) >= 0:
+            return self._rotate_right(node)
+
+        # Caso Derecha-Derecha
+        if balance < -1 and self._get_balance(node.right) <= 0:
+            return self._rotate_left(node)
+
+        # Caso Izquierda-Derecha
+        if balance > 1 and self._get_balance(node.left) < 0:
+            node.left = self._rotate_left(node.left)
+            return self._rotate_right(node)
+
+        # Caso Derecha-Izquierda
+        if balance < -1 and self._get_balance(node.right) > 0:
+            node.right = self._rotate_right(node.right)
+            return self._rotate_left(node)
+
+        return node
 
         # Caso: subárbol izquierdo pesado
         if balance > 1:

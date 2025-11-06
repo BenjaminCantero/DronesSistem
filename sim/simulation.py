@@ -1,6 +1,8 @@
-from tda.avl import AVLTree
+from tda.route_tree import RouteTree
 from tda.hash_map import HashMap
 from domain.order import Order
+from domain.client import Client
+from database import Session, Cliente, Orden
 from collections import deque
 import streamlit as st
 
@@ -11,14 +13,55 @@ class Simulation:
         self.graph = graph
         self.orders = HashMap()
         self.clients = HashMap()
-        self.route_log = AVLTree()
+        self.route_log = RouteTree()
         self.order_id = 0
         self.origin_freq = {}
         self.dest_freq = {}
+        
+        # Cargar clientes existentes desde la base de datos
+        session = Session()
+        try:
+            db_clients = session.query(Cliente).all()
+            for client in db_clients:
+                self.add_client(client.id, client.nombre, client.nodo_id, client.prioridad)
+        except Exception as e:
+            print(f"Error al cargar clientes: {e}")
+        finally:
+            session.close()
 
-    def add_client(self, client):
-        # Agrega un cliente al HashMap de clientes.
-        self.clients.insert(client.id, client)
+    def add_client(self, client_id, client_name, node_id, priority):
+        """Agrega un nuevo cliente al sistema y a la base de datos"""
+        # Verificar si el nodo existe
+        if node_id not in self.graph.vertices:
+            raise ValueError(f"El nodo {node_id} no existe en el grafo")
+            
+        # Crear el cliente
+        client = Client(client_id, client_name, node_id, priority)
+        
+        # Agregar a la estructura en memoria
+        self.clients.insert(client_id, client)
+        
+        # Agregar a la base de datos
+        session = Session()
+        try:
+            # Verificar si ya existe
+            existing = session.query(Cliente).filter_by(id=client_id).first()
+            if not existing:
+                db_client = Cliente(
+                    id=client_id,
+                    nombre=client_name,
+                    nodo_id=node_id,
+                    prioridad=priority
+                )
+                session.add(db_client)
+                session.commit()
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+        
+        return client
 
     def create_order(self, origin, destination):
         # Crea una orden entre dos nodos si ambos existen y hay ruta posible.
@@ -44,26 +87,55 @@ class Simulation:
         self.dest_freq[destination] = self.dest_freq.get(destination, 0) + 1
 
     def calculate_route(self, origin, destination, battery_limit=50):
-        # Calcula todas las rutas posibles entre origen y destino considerando la autonomía.
+        """
+        Calcula la mejor ruta entre origen y destino considerando:
+        - Límite de batería
+        - Puntos de recarga
+        - Distancia total
+        """
+        if origin not in self.graph.vertices or destination not in self.graph.vertices:
+            return None, None
+
+        # (nodo, ruta, costo_total, batería_restante)
+        queue = deque([(origin, [origin], 0, battery_limit)])
+        visited = set()  # (nodo, batería_restante)
         all_routes = []
-        queue = deque([(origin, [origin], 0)])
+
         while queue:
-            current, path, cost = queue.popleft()
-            if current == destination and cost <= battery_limit:
-                all_routes.append((path, cost))
+            current, path, total_cost, battery = queue.popleft()
+
+            # Si llegamos al destino, guardamos la ruta
+            if current == destination:
+                all_routes.append((path, total_cost))
                 continue
-            for neighbor, weight in self.graph.get_neighbors(current):
-                if neighbor not in path:
-                    new_cost = cost + weight
-                    if new_cost > battery_limit:
-                        if self.graph.vertices[neighbor].role != "recharge":
-                            continue
-                        new_cost = 0  # recarga la batería al llegar a un nodo de recarga
-                    queue.append((neighbor, path + [neighbor], new_cost))
+
+            # Explorar vecinos
+            for next_node, edge_cost in self.graph.get_neighbors(current):
+                if next_node in path:  # Evitar ciclos
+                    continue
+
+                # Calcular nueva batería y costo
+                new_battery = battery - edge_cost
+                new_total_cost = total_cost + edge_cost
+
+                # Si no hay suficiente batería pero es un punto de recarga
+                if new_battery < 0 and self.graph.vertices[next_node].role == "recharge":
+                    new_battery = battery_limit  # Recargar completamente
+
+                # Si hay suficiente batería o es un punto de recarga
+                if new_battery >= 0:
+                    state = (next_node, new_battery)
+                    if state not in visited:
+                        visited.add(state)
+                        new_path = path + [next_node]
+                        queue.append((next_node, new_path, new_total_cost, new_battery))
+
         if not all_routes:
             return None, None
-        best_path, best_cost = self._select_best_route(all_routes)
-        return best_path, best_cost
+
+        # Seleccionar la mejor ruta (la más corta)
+        best_route = min(all_routes, key=lambda x: x[1])
+        return best_route
 
     def _select_best_route(self, all_routes):
         # Selecciona la mejor ruta: primero la más frecuente, luego la de menor costo.

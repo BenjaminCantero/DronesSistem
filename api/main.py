@@ -48,17 +48,23 @@ def get_client(client_id: str):
     return client.to_dict()
 
 @app.get("/orders/")
-def get_orders():
-    sim = get_sim()
-    return [order[1].to_dict() for order in sim.get_orders()]
+async def get_orders():
+    try:
+        from database import obtener_ordenes_db
+        return obtener_ordenes_db()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener órdenes: {str(e)}")
 
 @app.get("/orders/{order_id}")
-def get_order(order_id: int):
-    sim = get_sim()
-    order = sim.get_order(order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Orden no encontrada")
-    return order.to_dict()
+async def get_order(order_id: int):
+    session = Session()
+    try:
+        order = session.query(Orden).filter(Orden.id == order_id).first()
+        if not order:
+            raise HTTPException(status_code=404, detail="Orden no encontrada")
+        return {"id": order.id, "origen": order.origen, "destino": order.destino, "cliente_id": order.cliente_id}
+    finally:
+        session.close()
 
 @app.post("/orders/{order_id}/cancel")
 def cancel_order(order_id: int):
